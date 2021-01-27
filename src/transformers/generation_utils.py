@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -633,6 +634,7 @@ class GenerationMixin:
         no_repeat_ngram_size: Optional[int] = None,
         encoder_no_repeat_ngram_size: Optional[int] = None,
         num_return_sequences: Optional[int] = None,
+        max_time: Optional[float] = None,
         decoder_start_token_id: Optional[int] = None,
         use_cache: Optional[bool] = None,
         num_beam_groups: Optional[int] = None,
@@ -703,6 +705,9 @@ class GenerationMixin:
                 add_prefix_space=True).input_ids`.
             num_return_sequences(:obj:`int`, `optional`, defaults to 1):
                 The number of independently computed returned sequences for each element in the batch.
+            max_time(:obj:`float`, `optional`, defaults to None):
+                The maximum amount of time you allow the computation to run for in seconds. generation will still
+                finish the current pass after allocated time has been passed.
             attention_mask (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
                 Mask to avoid performing attention on padding token indices. Mask values are in ``[0, 1]``, 1 for
                 tokens that are not masked, and 0 for masked tokens. If not provided, will default to a tensor the same
@@ -936,6 +941,7 @@ class GenerationMixin:
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
+                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -963,6 +969,7 @@ class GenerationMixin:
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
+                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -997,6 +1004,7 @@ class GenerationMixin:
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
+                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -1035,6 +1043,7 @@ class GenerationMixin:
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
+                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -1073,6 +1082,7 @@ class GenerationMixin:
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
+                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -1087,6 +1097,7 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
+        max_time: Optional[float] = None,
         **model_kwargs,
     ) -> Union[GreedySearchOutput, torch.LongTensor]:
         r"""
@@ -1119,6 +1130,9 @@ class GenerationMixin:
                 Whether or not to return the prediction scores. See ``scores`` under returned tensors for more details.
             return_dict_in_generate (:obj:`bool`, `optional`, defaults to `False`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
+            max_time(:obj:`float`, `optional`, defaults to None):
+                The maximum amount of time you allow the computation to run for in seconds. generation will still
+                finish the current pass after allocated time has been passed.
 
             model_kwargs:
                 Additional model specific keyword arguments will be forwarded to the :obj:`forward` function of the
@@ -1160,6 +1174,8 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
+        if max_time is not None:
+            start = datetime.datetime.now()
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
         max_length = max_length if max_length is not None else self.config.max_length
@@ -1249,6 +1265,11 @@ class GenerationMixin:
             if unfinished_sequences.max() == 0:
                 break
 
+            if max_time is not None:
+                duration = (datetime.datetime.now() - start).total_seconds()
+                if duration > max_time:
+                    break
+
             # increase cur_len
             cur_len = cur_len + 1
 
@@ -1284,6 +1305,7 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
+        max_time: Optional[float] = None,
         **model_kwargs,
     ) -> Union[SampleOutput, torch.LongTensor]:
         r"""
@@ -1318,6 +1340,9 @@ class GenerationMixin:
                 Whether or not to return the prediction scores. See ``scores`` under returned tensors for more details.
             return_dict_in_generate (:obj:`bool`, `optional`, defaults to `False`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
+            max_time(:obj:`float`, `optional`, defaults to None):
+                The maximum amount of time you allow the computation to run for in seconds. generation will still
+                finish the current pass after allocated time has been passed.
             model_kwargs:
                 Additional model specific kwargs will be forwarded to the :obj:`forward` function of the model. If
                 model is an encoder-decoder model the kwargs should include :obj:`encoder_outputs`.
@@ -1365,6 +1390,8 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
+        if max_time is not None:
+            start = datetime.datetime.now()
 
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
@@ -1455,6 +1482,11 @@ class GenerationMixin:
             if unfinished_sequences.max() == 0:
                 break
 
+            if max_time is not None:
+                duration = (datetime.datetime.now() - start).total_seconds()
+                if duration > max_time:
+                    break
+
             # update model kwargs
             model_kwargs = self._update_model_kwargs_for_generation(
                 outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
@@ -1492,6 +1524,7 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
+        max_time: Optional[float] = None,
         **model_kwargs,
     ) -> Union[BeamSearchOutput, torch.LongTensor]:
         r"""
@@ -1526,6 +1559,9 @@ class GenerationMixin:
                 Whether or not to return the prediction scores. See ``scores`` under returned tensors for more details.
             return_dict_in_generate (:obj:`bool`, `optional`, defaults to `False`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
+            max_time(:obj:`float`, `optional`, defaults to None):
+                The maximum amount of time you allow the computation to run for in seconds. generation will still
+                finish the current pass after allocated time has been passed.
             model_kwargs:
                 Additional model specific kwargs will be forwarded to the :obj:`forward` function of the model. If
                 model is an encoder-decoder model the kwargs should include :obj:`encoder_outputs`.
@@ -1586,6 +1622,8 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
+        if max_time is not None:
+            start = datetime.datetime.now()
 
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
@@ -1701,6 +1739,11 @@ class GenerationMixin:
             if beam_scorer.is_done:
                 break
 
+            if max_time is not None:
+                duration = (datetime.datetime.now() - start).total_seconds()
+                if duration > max_time:
+                    break
+
         sequence_outputs = beam_scorer.finalize(
             input_ids, beam_scores, next_tokens, next_indices, pad_token_id=pad_token_id, eos_token_id=eos_token_id
         )
@@ -1742,6 +1785,7 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
+        max_time: Optional[float] = None,
         **model_kwargs,
     ) -> Union[BeamSampleOutput, torch.LongTensor]:
         r"""
@@ -1847,6 +1891,8 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
+        if max_time is not None:
+            start = datetime.datetime.now()
 
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
@@ -1960,6 +2006,11 @@ class GenerationMixin:
             if beam_scorer.is_done:
                 break
 
+            if max_time is not None:
+                duration = (datetime.datetime.now() - start).total_seconds()
+                if duration > max_time:
+                    break
+
         sequence_outputs = beam_scorer.finalize(
             input_ids, beam_scores, next_tokens, next_indices, pad_token_id=pad_token_id, eos_token_id=eos_token_id
         )
@@ -2000,6 +2051,7 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
+        max_time: Optional[float] = None,
         **model_kwargs,
     ):
         r"""
@@ -2034,6 +2086,9 @@ class GenerationMixin:
                 Whether or not to return the prediction scores. See ``scores`` under returned tensors for more details.
             return_dict_in_generate (:obj:`bool`, `optional`, defaults to `False`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
+            max_time(:obj:`float`, `optional`, defaults to None):
+                The maximum amount of time you allow the computation to run for in seconds. generation will still
+                finish the current pass after allocated time has been passed.
             model_kwargs:
                 Additional model specific kwargs that will be forwarded to the :obj:`forward` function of the model. If
                 model is an encoder-decoder model the kwargs should include :obj:`encoder_outputs`.
@@ -2097,6 +2152,8 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
+        if max_time is not None:
+            start = datetime.datetime.now()
 
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
@@ -2256,6 +2313,11 @@ class GenerationMixin:
             cur_len = cur_len + 1
             if beam_scorer.is_done:
                 break
+
+            if max_time is not None:
+                duration = (datetime.datetime.now() - start).total_seconds()
+                if duration > max_time:
+                    break
 
         sequence_outputs = beam_scorer.finalize(
             input_ids, beam_scores, next_tokens, next_indices, pad_token_id=pad_token_id, eos_token_id=eos_token_id
