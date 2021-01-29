@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import datetime
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -38,6 +37,7 @@ from .generation_logits_process import (
     TopKLogitsWarper,
     TopPLogitsWarper,
 )
+from .generation_stopping_criteria import MaxLengthCriteria, MaxTimeCriteria, StoppingCriteriaList
 from .utils import logging
 
 
@@ -613,6 +613,19 @@ class GenerationMixin:
             processors.append(ForcedEOSTokenLogitsProcessor(max_length, forced_eos_token_id))
         return processors
 
+    def _get_stopping_criteria(
+        self,
+        max_length: Optional[int],
+        max_time: Optional[float],
+    ) -> StoppingCriteriaList:
+
+        stopping_criteria = StoppingCriteriaList()
+        if max_length is not None:
+            stopping_criteria.append(MaxLengthCriteria(max_length=max_length))
+        if max_time is not None:
+            stopping_criteria.append(MaxTimeCriteria(max_time=max_time))
+        return stopping_criteria
+
     @torch.no_grad()
     def generate(
         self,
@@ -926,6 +939,11 @@ class GenerationMixin:
             diversity_penalty=diversity_penalty,
         )
 
+        stopping_criteria = self._get_stopping_criteria(
+            max_length=max_length,
+            max_time=max_time,
+        )
+
         if is_greedy_gen_mode:
             if num_return_sequences > 1:
                 raise ValueError(
@@ -936,12 +954,11 @@ class GenerationMixin:
             return self.greedy_search(
                 input_ids,
                 logits_processor=logits_processor,
-                max_length=max_length,
+                stopping_criteria=stopping_criteria,
                 pad_token_id=pad_token_id,
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
-                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -969,7 +986,6 @@ class GenerationMixin:
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
-                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -999,12 +1015,11 @@ class GenerationMixin:
                 input_ids,
                 beam_scorer,
                 logits_processor=logits_processor,
-                max_length=max_length,
+                stopping_criteria=stopping_criteria,
                 pad_token_id=pad_token_id,
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
-                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -1038,12 +1053,11 @@ class GenerationMixin:
                 beam_scorer,
                 logits_processor=logits_processor,
                 logits_warper=logits_warper,
-                max_length=max_length,
+                stopping_criteria=stopping_criteria,
                 pad_token_id=pad_token_id,
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
-                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -1077,12 +1091,11 @@ class GenerationMixin:
                 input_ids,
                 diverse_beam_scorer,
                 logits_processor=logits_processor,
-                max_length=max_length,
+                stopping_criteria=stopping_criteria,
                 pad_token_id=pad_token_id,
                 eos_token_id=eos_token_id,
                 output_scores=output_scores,
                 return_dict_in_generate=return_dict_in_generate,
-                max_time=max_time,
                 **model_kwargs,
             )
 
@@ -1090,6 +1103,7 @@ class GenerationMixin:
         self,
         input_ids: torch.LongTensor,
         logits_processor: Optional[LogitsProcessorList] = None,
+        stopping_criteria: Optional[StoppingCriteriaList] = None,
         max_length: Optional[int] = None,
         pad_token_id: Optional[int] = None,
         eos_token_id: Optional[int] = None,
@@ -1097,7 +1111,6 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
-        max_time: Optional[float] = None,
         **model_kwargs,
     ) -> Union[GreedySearchOutput, torch.LongTensor]:
         r"""
@@ -1114,7 +1127,10 @@ class GenerationMixin:
                 An instance of :class:`~transformers.LogitsProcessorList`. List of instances of class derived from
                 :class:`~transformers.LogitsProcessor` used to modify the prediction scores of the language modeling
                 head applied at each generation step.
-            max_length (:obj:`int`, `optional`, defaults to 20):
+            stopping_criteria (:obj:`StoppingCriteriaList`, `optional`):
+                An instance of :class:`~transformers.StoppingCriteriaList`. List of instances of class derived from
+                :class:`~transformers.StoppingCriteria` used to tell if the generation loop should stop.
+            max_length (:obj:`int`, `optional`, defaults to 20, Deprecated, use `stopping_criteria` instead):
                 The maximum length of the sequence to be generated.
             pad_token_id (:obj:`int`, `optional`):
                 The id of the `padding` token.
@@ -1130,10 +1146,6 @@ class GenerationMixin:
                 Whether or not to return the prediction scores. See ``scores`` under returned tensors for more details.
             return_dict_in_generate (:obj:`bool`, `optional`, defaults to `False`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
-            max_time(:obj:`float`, `optional`, defaults to None):
-                The maximum amount of time you allow the computation to run for in seconds. generation will still
-                finish the current pass after allocated time has been passed.
-
             model_kwargs:
                 Additional model specific keyword arguments will be forwarded to the :obj:`forward` function of the
                 model. If model is an encoder-decoder model the kwargs should include :obj:`encoder_outputs`.
@@ -1174,11 +1186,8 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
-        if max_time is not None:
-            start = datetime.datetime.now()
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
-        max_length = max_length if max_length is not None else self.config.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -1265,10 +1274,8 @@ class GenerationMixin:
             if unfinished_sequences.max() == 0:
                 break
 
-            if max_time is not None:
-                duration = (datetime.datetime.now() - start).total_seconds()
-                if duration > max_time:
-                    break
+            if stopping_criteria(input_ids, scores):
+                break
 
             # increase cur_len
             cur_len = cur_len + 1
@@ -1297,6 +1304,7 @@ class GenerationMixin:
         self,
         input_ids: torch.LongTensor,
         logits_processor: Optional[LogitsProcessorList] = None,
+        stopping_criteria: Optional[StoppingCriteriaList] = None,
         logits_warper: Optional[LogitsProcessorList] = None,
         max_length: Optional[int] = None,
         pad_token_id: Optional[int] = None,
@@ -1305,7 +1313,6 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
-        max_time: Optional[float] = None,
         **model_kwargs,
     ) -> Union[SampleOutput, torch.LongTensor]:
         r"""
@@ -1320,11 +1327,14 @@ class GenerationMixin:
                 An instance of :class:`~transformers.LogitsProcessorList`. List of instances of class derived from
                 :class:`~transformers.LogitsProcessor` used to modify the prediction scores of the language modeling
                 head applied at each generation step.
+            stopping_criteria (:obj:`StoppingCriteriaList`, `optional`):
+                An instance of :class:`~transformers.StoppingCriteriaList`. List of instances of class derived from
+                :class:`~transformers.StoppingCriteria` used to tell if the generation loop should stop.
             logits_warper (:obj:`LogitsProcessorList`, `optional`):
                 An instance of :class:`~transformers.LogitsProcessorList`. List of instances of class derived from
                 :class:`~transformers.LogitsWarper` used to warp the prediction score distribution of the language
                 modeling head applied before multinomial sampling at each generation step.
-            max_length (:obj:`int`, `optional`, defaults to 20):
+            max_length (:obj:`int`, `optional`, defaults to 20, Deprecated):
                 The maximum length of the sequence to be generated.
             pad_token_id (:obj:`int`, `optional`):
                 The id of the `padding` token.
@@ -1340,9 +1350,6 @@ class GenerationMixin:
                 Whether or not to return the prediction scores. See ``scores`` under returned tensors for more details.
             return_dict_in_generate (:obj:`bool`, `optional`, defaults to `False`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
-            max_time(:obj:`float`, `optional`, defaults to None):
-                The maximum amount of time you allow the computation to run for in seconds. generation will still
-                finish the current pass after allocated time has been passed.
             model_kwargs:
                 Additional model specific kwargs will be forwarded to the :obj:`forward` function of the model. If
                 model is an encoder-decoder model the kwargs should include :obj:`encoder_outputs`.
@@ -1390,8 +1397,6 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
-        if max_time is not None:
-            start = datetime.datetime.now()
 
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
@@ -1482,10 +1487,8 @@ class GenerationMixin:
             if unfinished_sequences.max() == 0:
                 break
 
-            if max_time is not None:
-                duration = (datetime.datetime.now() - start).total_seconds()
-                if duration > max_time:
-                    break
+            if stopping_criteria():
+                break
 
             # update model kwargs
             model_kwargs = self._update_model_kwargs_for_generation(
@@ -1517,6 +1520,7 @@ class GenerationMixin:
         input_ids: torch.LongTensor,
         beam_scorer: BeamScorer,
         logits_processor: Optional[LogitsProcessorList] = None,
+        stopping_criteria: Optional[StoppingCriteriaList] = None,
         max_length: Optional[int] = None,
         pad_token_id: Optional[int] = None,
         eos_token_id: Optional[int] = None,
@@ -1524,7 +1528,6 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
-        max_time: Optional[float] = None,
         **model_kwargs,
     ) -> Union[BeamSearchOutput, torch.LongTensor]:
         r"""
@@ -1543,6 +1546,9 @@ class GenerationMixin:
                 An instance of :class:`~transformers.LogitsProcessorList`. List of instances of class derived from
                 :class:`~transformers.LogitsProcessor` used to modify the prediction scores of the language modeling
                 head applied at each generation step.
+            stopping_criteria (:obj:`StoppingCriteriaList`, `optional`):
+                An instance of :class:`~transformers.StoppingCriteriaList`. List of instances of class derived from
+                :class:`~transformers.StoppingCriteria` used to tell if the generation loop should stop.
             max_length (:obj:`int`, `optional`, defaults to 20):
                 The maximum length of the sequence to be generated.
             pad_token_id (:obj:`int`, `optional`):
@@ -1559,9 +1565,6 @@ class GenerationMixin:
                 Whether or not to return the prediction scores. See ``scores`` under returned tensors for more details.
             return_dict_in_generate (:obj:`bool`, `optional`, defaults to `False`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
-            max_time(:obj:`float`, `optional`, defaults to None):
-                The maximum amount of time you allow the computation to run for in seconds. generation will still
-                finish the current pass after allocated time has been passed.
             model_kwargs:
                 Additional model specific kwargs will be forwarded to the :obj:`forward` function of the model. If
                 model is an encoder-decoder model the kwargs should include :obj:`encoder_outputs`.
@@ -1622,9 +1625,6 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
-        if max_time is not None:
-            start = datetime.datetime.now()
-
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
         max_length = max_length if max_length is not None else self.config.max_length
@@ -1739,10 +1739,8 @@ class GenerationMixin:
             if beam_scorer.is_done:
                 break
 
-            if max_time is not None:
-                duration = (datetime.datetime.now() - start).total_seconds()
-                if duration > max_time:
-                    break
+            if stopping_criteria():
+                break
 
         sequence_outputs = beam_scorer.finalize(
             input_ids, beam_scores, next_tokens, next_indices, pad_token_id=pad_token_id, eos_token_id=eos_token_id
@@ -1777,6 +1775,7 @@ class GenerationMixin:
         input_ids: torch.LongTensor,
         beam_scorer: BeamScorer,
         logits_processor: Optional[LogitsProcessorList] = None,
+        stopping_criteria: Optional[StoppingCriteriaList] = None,
         logits_warper: Optional[LogitsProcessorList] = None,
         max_length: Optional[int] = None,
         pad_token_id: Optional[int] = None,
@@ -1785,7 +1784,6 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
-        max_time: Optional[float] = None,
         **model_kwargs,
     ) -> Union[BeamSampleOutput, torch.LongTensor]:
         r"""
@@ -1804,6 +1802,9 @@ class GenerationMixin:
                 An instance of :class:`~transformers.LogitsProcessorList`. List of instances of class derived from
                 :class:`~transformers.LogitsProcessor` used to modify the prediction scores of the language modeling
                 head applied at each generation step.
+            stopping_criteria (:obj:`StoppingCriteriaList`, `optional`):
+                An instance of :class:`~transformers.StoppingCriteriaList`. List of instances of class derived from
+                :class:`~transformers.StoppingCriteria` used to tell if the generation loop should stop.
             logits_warper (:obj:`LogitsProcessorList`, `optional`):
                 An instance of :class:`~transformers.LogitsProcessorList`. List of instances of class derived from
                 :class:`~transformers.LogitsWarper` used to warp the prediction score distribution of the language
@@ -1891,9 +1892,6 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
-        if max_time is not None:
-            start = datetime.datetime.now()
-
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
         max_length = max_length if max_length is not None else self.config.max_length
@@ -2006,10 +2004,8 @@ class GenerationMixin:
             if beam_scorer.is_done:
                 break
 
-            if max_time is not None:
-                duration = (datetime.datetime.now() - start).total_seconds()
-                if duration > max_time:
-                    break
+            if stopping_criteria():
+                break
 
         sequence_outputs = beam_scorer.finalize(
             input_ids, beam_scores, next_tokens, next_indices, pad_token_id=pad_token_id, eos_token_id=eos_token_id
@@ -2044,6 +2040,7 @@ class GenerationMixin:
         input_ids: torch.LongTensor,
         beam_scorer: BeamScorer,
         logits_processor: Optional[LogitsProcessorList] = None,
+        stopping_criteria: Optional[StoppingCriteriaList] = None,
         max_length: Optional[int] = None,
         pad_token_id: Optional[int] = None,
         eos_token_id: Optional[int] = None,
@@ -2051,7 +2048,6 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
-        max_time: Optional[float] = None,
         **model_kwargs,
     ):
         r"""
@@ -2070,6 +2066,9 @@ class GenerationMixin:
                 An instance of :class:`~transformers.LogitsProcessorList`. List of instances of class derived from
                 :class:`~transformers.LogitsProcessor` used to modify the prediction scores of the language modeling
                 head applied at each generation step.
+            stopping_criteria (:obj:`StoppingCriteriaList`, `optional`):
+                An instance of :class:`~transformers.StoppingCriteriaList`. List of instances of class derived from
+                :class:`~transformers.StoppingCriteria` used to tell if the generation loop should stop.
             max_length (:obj:`int`, `optional`, defaults to 20):
                 The maximum length of the sequence to be generated.
             pad_token_id (:obj:`int`, `optional`):
@@ -2086,9 +2085,6 @@ class GenerationMixin:
                 Whether or not to return the prediction scores. See ``scores`` under returned tensors for more details.
             return_dict_in_generate (:obj:`bool`, `optional`, defaults to `False`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
-            max_time(:obj:`float`, `optional`, defaults to None):
-                The maximum amount of time you allow the computation to run for in seconds. generation will still
-                finish the current pass after allocated time has been passed.
             model_kwargs:
                 Additional model specific kwargs that will be forwarded to the :obj:`forward` function of the model. If
                 model is an encoder-decoder model the kwargs should include :obj:`encoder_outputs`.
@@ -2152,11 +2148,9 @@ class GenerationMixin:
 
             >>> print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
         """
-        if max_time is not None:
-            start = datetime.datetime.now()
-
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
+        stopping_criteria = stopping_criteria if stopping_criteria is not None else StoppingCriteriaList()
         max_length = max_length if max_length is not None else self.config.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
@@ -2314,10 +2308,8 @@ class GenerationMixin:
             if beam_scorer.is_done:
                 break
 
-            if max_time is not None:
-                duration = (datetime.datetime.now() - start).total_seconds()
-                if duration > max_time:
-                    break
+            if stopping_criteria(input_ids, scores):
+                break
 
         sequence_outputs = beam_scorer.finalize(
             input_ids, beam_scores, next_tokens, next_indices, pad_token_id=pad_token_id, eos_token_id=eos_token_id
