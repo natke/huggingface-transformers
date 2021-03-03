@@ -113,7 +113,6 @@ class SageMakerTrainer(Trainer):
             return super()._wrap_model(model)
 
     def _save(self, output_dir):
-        # saving model only when dp_rank is 0 partial save will raise an error
         if self.is_world_process_zero():
             return
         super()._save(output_dir)
