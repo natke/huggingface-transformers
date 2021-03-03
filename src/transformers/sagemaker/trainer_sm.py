@@ -113,12 +113,12 @@ class SageMakerTrainer(Trainer):
             return super()._wrap_model(model)
         
     def _save(self, output_dir):
-        if self.is_world_process_zero():
+        if not self.is_world_process_zero():
             return
         super()._save(output_dir)
 
     def _save_checkpoint(self, model, trial, metrics=None):
-        if self.is_world_process_zero():
+        if not self.is_world_process_zero():
             return
         super()._save_checkpoint(model, trial, metrics)
 
