@@ -120,7 +120,6 @@ class SageMakerTrainer(Trainer):
                 torch.save(model_dict, os.path.join(output_dir, "pytorch_model.bin"))
         else:
             super()._save(output_dir)
-        super()._save(output_dir)
 
     def create_optimizer_and_scheduler(self, num_training_steps: int):
         super().create_optimizer_and_scheduler(num_training_steps)
