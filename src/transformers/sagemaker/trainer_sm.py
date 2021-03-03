@@ -116,7 +116,7 @@ class SageMakerTrainer(Trainer):
     def _save(self, output_dir):
         if self.is_model_parallel_enabled:
             if smp.dp_rank() == 0:
-                model_dict = self.model_wrapped.state_dict()
+                model_dict = self.model_wrapped.local_state_dict()
                 torch.save(model_dict, os.path.join(output_dir, "pytorch_model.bin"))
         else:
             super()._save(output_dir)
