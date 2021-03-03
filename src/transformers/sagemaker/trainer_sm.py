@@ -111,19 +111,12 @@ class SageMakerTrainer(Trainer):
             return smp.DistributedModel(model)
         else:
             return super()._wrap_model(model)
-        
+
     def _save(self, output_dir):
         # saving model only when dp_rank is 0 partial save will raise an error
-        if self.is_model_parallel_enabled and smp.dp_rank() != 0:
+        if self.is_world_process_zero():
             return
         super()._save(output_dir)
-
-    def _save_checkpoint(self, model, trial, metrics=None):
-        # saving model only when dp_rank is 0 partial save will raise an error
-        if self.is_model_parallel_enabled and smp.dp_rank() != 0:
-            return
-        super()._save_checkpoint(model, trial, metrics)
-
 
     def create_optimizer_and_scheduler(self, num_training_steps: int):
         super().create_optimizer_and_scheduler(num_training_steps)
