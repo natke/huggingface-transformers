@@ -111,11 +111,17 @@ class SageMakerTrainer(Trainer):
             return smp.DistributedModel(model)
         else:
             return super()._wrap_model(model)
-
+        
     def _save(self, output_dir):
         if self.is_world_process_zero():
             return
         super()._save(output_dir)
+
+    def _save_checkpoint(self, model, trial, metrics=None):
+        if self.is_world_process_zero():
+            return
+        super()._save_checkpoint(model, trial, metrics)
+
 
     def create_optimizer_and_scheduler(self, num_training_steps: int):
         super().create_optimizer_and_scheduler(num_training_steps)
