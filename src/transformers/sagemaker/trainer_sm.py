@@ -113,12 +113,14 @@ class SageMakerTrainer(Trainer):
             return super()._wrap_model(model)
         
     def _save(self, output_dir):
-        if not self.is_world_process_zero():
+        if self.is_model_parallel_enabled and smp.dp_rank() != 0:
+        # if not self.is_world_process_zero():
             return
         super()._save(output_dir)
-
+        
     def _save_checkpoint(self, model, trial, metrics=None):
-        if not self.is_world_process_zero():
+        if self.is_model_parallel_enabled and smp.dp_rank() != 0:
+        # if not self.is_world_process_zero():
             return
         super()._save_checkpoint(model, trial, metrics)
 
