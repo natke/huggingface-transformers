@@ -15,6 +15,7 @@
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
+import os
 from torch import nn
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.distributed import DistributedSampler
@@ -111,19 +112,15 @@ class SageMakerTrainer(Trainer):
             return smp.DistributedModel(model)
         else:
             return super()._wrap_model(model)
-        
-    def _save(self, output_dir):
-        if self.is_model_parallel_enabled and smp.dp_rank() != 0:
-        # if not self.is_world_process_zero():
-            return
-        super()._save(output_dir)
-        
-    def _save_checkpoint(self, model, trial, metrics=None):
-        if self.is_model_parallel_enabled and smp.dp_rank() != 0:
-        # if not self.is_world_process_zero():
-            return
-        super()._save_checkpoint(model, trial, metrics)
 
+    def _save(self, output_dir):
+        if self.is_model_parallel_enabled:
+            if smp.dp_rank() == 0:
+                model_dict = self.model_wrapped.state_dict()
+                torch.save(model_dict, os.path.join(output_dir, "pytorch_model.bin"))
+        else:
+            super()._save(output_dir)
+        super()._save(output_dir)
 
     def create_optimizer_and_scheduler(self, num_training_steps: int):
         super().create_optimizer_and_scheduler(num_training_steps)
