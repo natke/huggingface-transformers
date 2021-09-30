@@ -1108,7 +1108,7 @@ class Trainer:
 
             logger.info("Converting to ORTModule ....")
             if args.output_dir:
-                from torch_ort.experimental import DebugOptions
+                from torch_ort import DebugOptions
                 model = ORTModule(self.model, DebugOptions(save_onnx=True, onnx_prefix='ort_model'))
             else:
                 model = ORTModule(self.model)
