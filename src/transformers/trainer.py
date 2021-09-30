@@ -1105,8 +1105,13 @@ class Trainer:
         delay_optimizer_creation = self.sharded_ddp is not None and self.sharded_ddp != ShardedDDPOption.SIMPLE
         if args.ort:
             from torch_ort import ORTModule
+
             logger.info("Converting to ORTModule ....")
-            model = ORTModule(self.model)
+            if args.output_dir:
+                from torch_ort.experimental import DebugOptions
+                model = ORTModule(self.model, DebugOptions(save_onnx=True, onnx_prefix='ort_model'))
+            else:
+                model = ORTModule(self.model)
             self.model_wrapped = model
         if args.deepspeed:
             if args.ort:

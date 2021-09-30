@@ -269,8 +269,8 @@ class TrainingArguments:
             Use `Deepspeed <https://github.com/microsoft/deepspeed>`__. This is an experimental feature and its API may
             evolve in the future. The value is either the location of DeepSpeed json config file (e.g.,
             ``ds_config.json``) or an already loaded json file as a :obj:`dict`"
-        ortmodule (:obj:`bool`, `optional`):
-            Use `ORTModule <https://github.com/microsoft/onnxruntime>`__.
+        ort (:obj:`bool`, `optional`):
+            Use `torch-ort <https://github.com/pytorch/ort>`__.
         label_smoothing_factor (:obj:`float`, `optional`, defaults to 0.0):
             The label smoothing factor to use. Zero means no label smoothing, otherwise the underlying onehot-encoded
             labels are changed from 0s and 1s to :obj:`label_smoothing_factor/num_labels` and :obj:`1 -
@@ -524,7 +524,9 @@ class TrainingArguments:
     )
     ort: Optional[bool] = field(
         default=False,
-        metadata={"help": "Enable Ort"},
+        metadata={
+            "help": "Enable ONNX Runtime (ORT)"
+        },
     )
     label_smoothing_factor: float = field(
         default=0.0, metadata={"help": "The label smoothing epsilon to apply (zero means no label smoothing)."}
@@ -664,6 +666,8 @@ class TrainingArguments:
             self.tpu_metrics_debug = False
         if isinstance(self.debug, str):
             self.debug = [DebugOption(s) for s in self.debug.split()]
+
+            
 
         if self.deepspeed:
             # - must be run very last in arg parsing, since it will use a lot of these settings.
